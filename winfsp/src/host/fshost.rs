@@ -66,8 +66,22 @@ mod sealed {
 /// `FspFileSystemSetOperationGuardStrategy` and the bounds required to start the
 /// dispatcher safely.
 pub trait OperationGuardStrategy: sealed::Sealed {
+    /// The value WinFsp's C API expects for this strategy.
+    ///
+    /// `u32` with an `as` cast at every use, rather than the bindgen
+    /// type directly, because that type is NOT THE SAME ON EVERY
+    /// TARGET. bindgen takes the signedness of a C enum's constants
+    /// from the headers as the target's clang sees them: on
+    /// `*-pc-windows-msvc` the guard-strategy constants come out
+    /// `i32`, and on `*-pc-windows-gnullvm` they come out `u32`.
+    ///
+    /// Naming either one here makes the crate fail to compile on the
+    /// other. `as` is an identity conversion where the types already
+    /// agree and a reinterpretation where they do not, and these are
+    /// two small non-negative constants, so it is exact in both
+    /// directions.
     #[doc(hidden)]
-    const RAW: i32;
+    const RAW: u32;
 }
 
 /// Fine-grained concurrency strategy.
@@ -89,8 +103,9 @@ pub trait OperationGuardStrategy: sealed::Sealed {
 pub enum FineGuard {}
 impl sealed::Sealed for FineGuard {}
 impl OperationGuardStrategy for FineGuard {
-    const RAW: i32 =
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE;
+    const RAW: u32 =
+        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE
+            as u32;
 }
 
 /// Coarse-grained concurrency strategy.
@@ -104,8 +119,9 @@ impl OperationGuardStrategy for FineGuard {
 pub enum CoarseGuard {}
 impl sealed::Sealed for CoarseGuard {}
 impl OperationGuardStrategy for CoarseGuard {
-    const RAW: i32 =
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE;
+    const RAW: u32 =
+        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE
+            as u32;
 }
 
 /// Options to create the filesystem with.
@@ -272,7 +288,9 @@ impl<T: FileSystemContext, S: OperationGuardStrategy> FileSystemHost<T, S> {
                 FileSystemUserContext::new(context),
             ))) as *mut _;
 
-            FspFileSystemSetOperationGuardStrategyF(fsp_struct, S::RAW);
+            // `as _`: the parameter is i32 on msvc and u32 on gnullvm,
+            // for the same bindgen reason as `RAW` itself.
+            FspFileSystemSetOperationGuardStrategyF(fsp_struct, S::RAW as _);
         }
 
         assert!(!fsp_struct.is_null());
